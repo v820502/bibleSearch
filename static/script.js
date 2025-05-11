@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const chapterSelect = document.getElementById('chapterSelect');
     const verseSelect = document.getElementById('verseSelect');
     const bibleContent = document.getElementById('bibleContent');
+    const copyBtn = document.getElementById('copyVerseBtn');
 
     // 載入書卷列表
     fetch('/api/books')
@@ -77,12 +78,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 搜尋功能
     let searchTimeout;
+    let selectedIndex = -1; // 新增：目前選中的下拉選單索引
     searchInput.addEventListener('input', function() {
         clearTimeout(searchTimeout);
         const query = this.value.trim();
 
         if (query.length < 1) {
             searchResults.classList.add('hidden');
+            selectedIndex = -1;
             return;
         }
 
@@ -91,6 +94,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(response => response.json())
                 .then(results => {
                     searchResults.innerHTML = '';
+                    selectedIndex = -1; // 每次搜尋重置
                     // 判斷是否為多節查詢（全部元素都有 verse 屬性且無 type: 'book'）
                     const isMultiVerse = results.length > 1 && results.every(r => r.verse && !r.type);
                     if (isMultiVerse) {
@@ -102,7 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         searchResults.innerHTML = html;
                         // 點擊整個區塊時顯示內容到主區塊
                         searchResults.querySelector('.search-result-range').addEventListener('click', () => {
-                            bibleContent.innerHTML = html;
+                            showVerseContent(html);
                             searchResults.classList.add('hidden');
                             searchInput.value = '';
                         });
@@ -111,9 +115,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     // 其餘情況維持原本行為
                     if (results.length > 0) {
-                        results.forEach(result => {
+                        results.forEach((result, idx) => {
                             const div = document.createElement('div');
                             div.className = 'search-result-item';
+                            div.tabIndex = 0; // 讓其可聚焦
+                            div.dataset.index = idx;
                             if (result.type === 'book') {
                                 div.textContent = result.book;
                                 div.addEventListener('click', () => {
@@ -141,7 +147,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     html += `<div><span class='text-gray-400'>${vd.verse}</span> ${vd.text}</div>`;
                                                 });
                                                 html += '</div>';
-                                                bibleContent.innerHTML = html;
+                                                showVerseContent(html);
                                                 searchResults.classList.add('hidden');
                                                 searchInput.value = '';
                                             });
@@ -165,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         .then(response => response.json())
                                         .then(verses => {
                                             if (verses.length === 0) {
-                                                bibleContent.innerHTML = '<div class="text-center text-gray-500">查無經文</div>';
+                                                showVerseContent('<div class="text-center text-gray-500">查無經文</div>');
                                                 return;
                                             }
                                             let html = `<div class='verse-reference'>${result.book} 第${result.chapter}章</div><div class='verse-content'>`;
@@ -177,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     html += `<div><span class='text-gray-400'>${vd.verse}</span> ${vd.text}</div>`;
                                                 });
                                                 html += '</div>';
-                                                bibleContent.innerHTML = html;
+                                                showVerseContent(html);
                                                 searchResults.classList.add('hidden');
                                                 searchInput.value = '';
                                             });
@@ -193,6 +199,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
         }, 300);
     });
+
+    // 新增：鍵盤上下鍵與 Enter 支援
+    searchInput.addEventListener('keydown', function(e) {
+        const items = searchResults.querySelectorAll('.search-result-item');
+        if (searchResults.classList.contains('hidden') || items.length === 0) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = (selectedIndex + 1) % items.length;
+            updateActiveItem();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+            updateActiveItem();
+        } else if (e.key === 'Enter') {
+            if (selectedIndex >= 0 && selectedIndex < items.length) {
+                items[selectedIndex].click();
+            }
+        }
+    });
+
+    function updateActiveItem() {
+        const items = searchResults.querySelectorAll('.search-result-item');
+        items.forEach((item, idx) => {
+            if (idx === selectedIndex) {
+                item.classList.add('bg-blue-100', 'dark:bg-blue-700');
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('bg-blue-100', 'dark:bg-blue-700');
+            }
+        });
+    }
 
     // 點擊外部關閉搜尋結果
     document.addEventListener('click', function(e) {
@@ -216,12 +253,12 @@ document.addEventListener('DOMContentLoaded', function() {
         selectorModal.classList.remove('flex');
     });
 
-    confirmSelection.addEventListener('click', () => {
+    confirmSelection.addEventListener('click', function() {
         const book = bookSelect.value;
         const chapter = chapterSelect.value;
         const verse = verseSelect.value;
         if (!chapter) {
-            bibleContent.innerHTML = '<div class="text-center text-gray-500">請先選擇章</div>';
+            showVerseContent('<div class="text-center text-gray-500">請先選擇章</div>');
             return;
         }
         if (!verse) {
@@ -230,7 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(response => response.json())
                 .then(verses => {
                     if (verses.length === 0) {
-                        bibleContent.innerHTML = '<div class="text-center text-gray-500">查無經文</div>';
+                        showVerseContent('<div class="text-center text-gray-500">查無經文</div>');
                         return;
                     }
                     let html = `<div class='verse-reference'>${book} 第${chapter}章</div><div class='verse-content'>`;
@@ -242,7 +279,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             html += `<div><span class='text-gray-400'>${vd.verse}</span> ${vd.text}</div>`;
                         });
                         html += '</div>';
-                        bibleContent.innerHTML = html;
+                        showVerseContent(html);
                         selectorModal.classList.add('hidden');
                         selectorModal.classList.remove('flex');
                     });
@@ -258,13 +295,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // 幫助函式：只更新經文內容
+    function showVerseContent(html) {
+        // 直接覆蓋 verse-content 外層，確保內容乾淨
+        const verseContent = bibleContent.querySelector('.verse-content');
+        if (verseContent) {
+            verseContent.outerHTML = `<div class="verse-content">${html}</div>`;
+        }
+        updateCopyBtnVisibility();
+    }
+
+    // 修改 displayVerse
     function displayVerse(verse) {
-        bibleContent.innerHTML = `
+        showVerseContent(`
             <div class="verse-reference">${verse.book} ${verse.chapter}:${verse.verse}</div>
-            <div class="verse-content">
-                <span class='text-gray-400'>${verse.verse}</span> ${verse.text}
-            </div>
-        `;
+            <div><span class='text-gray-400'>${verse.verse}</span> ${verse.text}</div>
+        `);
     }
 
     // 明亮/黑暗模式切換
@@ -287,4 +333,34 @@ document.addEventListener('DOMContentLoaded', function() {
         const isDark = document.documentElement.classList.contains('dark');
         setTheme(!isDark);
     });
+
+    // 經文複製功能
+    const verseContent = bibleContent.querySelector('.verse-content');
+
+    function updateCopyBtnVisibility() {
+        // 只要有 .verse-content 就顯示按鈕
+        const verseContent = bibleContent.querySelector('.verse-content');
+        if (verseContent && verseContent.innerText.trim() && verseContent.innerText.trim() !== '請選擇或搜尋經文') {
+            copyBtn.style.display = '';
+        } else {
+            copyBtn.style.display = 'none';
+        }
+    }
+
+    copyBtn.addEventListener('click', function() {
+        const verseContent = bibleContent.querySelector('.verse-content');
+        if (verseContent) {
+            const text = verseContent.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+                setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i>'; }, 1200);
+            });
+        }
+    });
+
+    updateCopyBtnVisibility();
+
+    // 監聽內容變化（保險起見）
+    const observer = new MutationObserver(updateCopyBtnVisibility);
+    observer.observe(bibleContent, { childList: true, subtree: true, characterData: true });
 }); 
