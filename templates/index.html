@@ -88,34 +88,5 @@
     </button>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
-    <script>
-      // 經文複製功能
-      const bibleContent = document.getElementById('bibleContent');
-      const copyBtn = document.getElementById('copyVerseBtn');
-      function updateCopyBtnVisibility() {
-        // 只要有 .verse-content 就顯示按鈕
-        const verseContent = bibleContent.querySelector('.verse-content');
-        if (verseContent && verseContent.innerText.trim()) {
-          copyBtn.style.display = '';
-        } else {
-          copyBtn.style.display = 'none';
-        }
-      }
-      // 監聽內容變化（只監聽 .verse-content 變化）
-      const observer = new MutationObserver(updateCopyBtnVisibility);
-      observer.observe(bibleContent, { childList: true, subtree: true, characterData: true });
-      copyBtn.addEventListener('click', function() {
-        // 只複製 verse-content 內容
-        const verseContent = bibleContent.querySelector('.verse-content');
-        if (verseContent) {
-          const text = verseContent.innerText;
-          navigator.clipboard.writeText(text).then(() => {
-            copyBtn.innerHTML = '<i class="fas fa-check"></i>';
-            setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i>'; }, 1200);
-          });
-        }
-      });
-      updateCopyBtnVisibility();
-    </script>
 </body>
 </html> 

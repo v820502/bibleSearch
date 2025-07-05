@@ -202,7 +202,71 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 新增：鍵盤上下鍵與 Enter 支援
     searchInput.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return; // 快速過濾
         const items = searchResults.querySelectorAll('.search-result-item');
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (!searchResults.classList.contains('hidden') && items.length > 0) {
+                // dropdown 已展開
+                if (selectedIndex >= 0 && selectedIndex < items.length) {
+                    items[selectedIndex].click();
+                } else {
+                    items[0].click();
+                }
+            } else {
+                // 尚未展開，直接查詢，拿第一個結果
+                const query = searchInput.value.trim();
+                if (!query) return;
+                fetch(`/api/search?q=${encodeURIComponent(query)}`)
+                    .then(r => r.json())
+                    .then(res => {
+                        if (!res || res.length === 0) return;
+                        const first = res[0];
+                        // 依照 type 執行與點擊相同動作
+                        if (first.type === 'book') {
+                            bookSelect.value = first.book;
+                            bookSelect.dispatchEvent(new Event('change'));
+                            selectorModal.classList.remove('hidden');
+                            selectorModal.classList.add('flex');
+                        } else if (first.type === 'range') {
+                            fetch(`/api/verses/${first.book}/${first.chapter}`)
+                                .then(r => r.json())
+                                .then(verses => {
+                                    const versesInRange = verses.filter(v => v >= first.verse_start && v <= first.verse_end);
+                                    let html = `<div class='verse-reference'>${first.book} ${first.chapter}:${first.verse_start}-${first.verse_end}</div><div class='verse-content'>`;
+                                    let fs = versesInRange.map(v => fetch(`/api/verse/${first.book}/${first.chapter}/${v}`).then(r => r.json()));
+                                    Promise.all(fs).then(vds => {
+                                        vds.forEach(vd => { html += `<div><span class='text-gray-400'>${vd.verse}</span> ${vd.text}</div>`; });
+                                        html += '</div>';
+                                        showVerseContent(html);
+                                    });
+                                });
+                        } else if (first.type === 'single') {
+                            fetch(`/api/verse/${first.book}/${first.chapter}/${first.verse}`)
+                                .then(r => r.json())
+                                .then(displayVerse);
+                        } else if (first.type === 'chapter') {
+                            fetch(`/api/verses/${first.book}/${first.chapter}`)
+                                .then(r => r.json())
+                                .then(verses => {
+                                    if (verses.length === 0) return;
+                                    let html = `<div class='verse-reference'>${first.book} 第${first.chapter}章</div><div class='verse-content'>`;
+                                    let fs = verses.map(v => fetch(`/api/verse/${first.book}/${first.chapter}/${v}`).then(r => r.json()));
+                                    Promise.all(fs).then(vds => {
+                                        vds.forEach(vd => { html += `<div><span class='text-gray-400'>${vd.verse}</span> ${vd.text}</div>`; });
+                                        html += '</div>';
+                                        showVerseContent(html);
+                                    });
+                                });
+                        }
+                        searchResults.classList.add('hidden');
+                        searchInput.value = '';
+                    });
+            }
+            return;
+        }
+
+        // 處理上下鍵
         if (searchResults.classList.contains('hidden') || items.length === 0) return;
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -212,10 +276,6 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             selectedIndex = (selectedIndex - 1 + items.length) % items.length;
             updateActiveItem();
-        } else if (e.key === 'Enter') {
-            if (selectedIndex >= 0 && selectedIndex < items.length) {
-                items[selectedIndex].click();
-            }
         }
     });
 
@@ -303,6 +363,8 @@ document.addEventListener('DOMContentLoaded', function() {
             verseContent.outerHTML = `<div class="verse-content">${html}</div>`;
         }
         updateCopyBtnVisibility();
+        // 顯示後自動複製
+        copyVerseContent();
     }
 
     // 修改 displayVerse
@@ -347,18 +409,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    copyBtn.addEventListener('click', function() {
-        const verseContent = bibleContent.querySelector('.verse-content');
-        if (verseContent) {
-            const text = verseContent.innerText;
-            navigator.clipboard.writeText(text).then(() => {
-                copyBtn.innerHTML = '<i class="fas fa-check"></i>';
-                setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i>'; }, 1200);
-            });
-        }
-    });
+    // 在 DOMContentLoaded 內部最上層函式作用域新增複製經文到剪貼簿的共用函式
+    function copyVerseContent() {
+        const verseContentNode = bibleContent.querySelector('.verse-content');
+        if (!verseContentNode) return;
+        const rawText = verseContentNode.innerText;
+        // 移除結尾多餘換行與任何空白字元（\n, \r, tab, space 等）
+        const text = rawText.replace(/[\s\uFEFF\xA0]+$/, '');
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+            copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => { copyBtn.innerHTML = '<i class="fas fa-copy"></i>'; }, 1200);
+        });
+    }
 
-    updateCopyBtnVisibility();
+    // 調整 copyBtn 事件，改用共用函式
+    copyBtn.addEventListener('click', copyVerseContent);
 
     // 監聽內容變化（保險起見）
     const observer = new MutationObserver(updateCopyBtnVisibility);
